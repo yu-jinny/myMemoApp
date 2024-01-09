@@ -1,8 +1,18 @@
 // TableViewController.swift
 import UIKit
 
+struct TodoItem {
+    var text: String
+    var isCompleted: Bool
+
+    // TodoItem을 Dictionary로 변환하는 속성
+    var dictionary: [String: Any] {
+        return ["text": text, "isCompleted": isCompleted]
+    }
+}
+
 class TableViewController: UITableViewController {
-    var todos: [String] = []
+    var todos: [TodoItem] = []
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -11,15 +21,21 @@ class TableViewController: UITableViewController {
 
     // MARK: - Todo 데이터 생성 (Create)
     func createTodo(text: String) {
-        todos.append(text)
-        UserDefaults.standard.set(todos, forKey: "todos")
+        let newTodo = TodoItem(text: text, isCompleted: false)
+        todos.append(newTodo)
+        UserDefaults.standard.set(todos.map { $0.dictionary }, forKey: "todos")
         tableView.reloadData()
     }
 
     // MARK: - Todo 데이터 읽기 (Read)
     func loadTodos() {
-        if let savedTodos = UserDefaults.standard.array(forKey: "todos") as? [String] {
-            todos = savedTodos
+        if let savedTodos = UserDefaults.standard.array(forKey: "todos") as? [[String: Any]] {
+            todos = savedTodos.compactMap { dictionary in
+                guard let text = dictionary["text"] as? String, let isCompleted = dictionary["isCompleted"] as? Bool else {
+                    return nil
+                }
+                return TodoItem(text: text, isCompleted: isCompleted)
+            }
             tableView.reloadData()
         }
     }
@@ -31,9 +47,68 @@ class TableViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
-        cell.textLabel?.text = todos[indexPath.row]
+
+        // TodoItem에서 스위치 상태 및 텍스트를 가져와 설정
+        let todoItem = todos[indexPath.row]
+        cell.textLabel?.text = todoItem.text
+
+        let switchView = UISwitch()
+        switchView.isOn = todoItem.isCompleted
+        switchView.addTarget(self, action: #selector(switchChanged(_:)), for: .valueChanged)
+
+        // 태그를 이용해 행 번호 저장
+        switchView.tag = indexPath.row
+
+        // AccessoryView로 스위치 추가
+        cell.accessoryView = switchView
+
+        // 스위치 상태에 따라 텍스트 가운데 줄 추가
+        updateTextStrikeThrough(cell: cell, isCompleted: todoItem.isCompleted)
+
         return cell
     }
+
+    // MARK: - TableView Delegate
+    override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
+        if editingStyle == .delete {
+            // 1. 삭제 버튼이 눌린 행의 데이터를 배열에서 제거
+            todos.remove(at: indexPath.row)
+
+            // 2. 변경된 데이터를 UserDefaults에 저장
+            UserDefaults.standard.set(todos.map { $0.dictionary }, forKey: "todos")
+
+            // 3. TableView에서 해당 행을 삭제
+            tableView.deleteRows(at: [indexPath], with: .fade)
+        }
+    }
+
+    // MARK: - 스위치 상태가 변경될 때 호출되는 메서드
+    @objc func switchChanged(_ sender: UISwitch) {
+        let row = sender.tag
+
+        // TodoItem에서 스위치 상태 변경 및 저장
+        todos[row].isCompleted = sender.isOn
+        UserDefaults.standard.set(todos.map { $0.dictionary }, forKey: "todos")
+
+        // 텍스트의 가운데 줄 상태 업데이트
+        if let cell = tableView.cellForRow(at: IndexPath(row: row, section: 0)) {
+            updateTextStrikeThrough(cell: cell, isCompleted: sender.isOn)
+        }
+    }
+
+    // MARK: - 텍스트 가운데 줄 상태 업데이트
+    func updateTextStrikeThrough(cell: UITableViewCell, isCompleted: Bool) {
+        if isCompleted {
+            // 텍스트에 가운데 줄 추가
+            let attributeString = NSAttributedString(string: cell.textLabel?.text ?? "", attributes: [NSAttributedString.Key.strikethroughStyle: NSUnderlineStyle.single.rawValue])
+            cell.textLabel?.attributedText = attributeString
+        } else {
+            // 가운데 줄 제거
+            let attributeString = NSAttributedString(string: cell.textLabel?.text ?? "")
+            cell.textLabel?.attributedText = attributeString
+        }
+    }
+
 
     // MARK: - 버튼 눌렀을 때 호출되는 메서드
 
