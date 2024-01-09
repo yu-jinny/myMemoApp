@@ -79,6 +79,8 @@ class TableViewController: UITableViewController {
 
             // 3. TableView에서 해당 행을 삭제
             tableView.deleteRows(at: [indexPath], with: .fade)
+        } else if editingStyle == .insert {
+            // 추가 버튼을 눌렀을 때 필요한 경우
         }
     }
 
@@ -109,9 +111,61 @@ class TableViewController: UITableViewController {
         }
     }
 
+    // MARK: - 수정 기능 추가
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        // 1. UIAlertController를 이용해 입력을 받을 수 있는 팝업을 띄웁니다.
+        let alertController = UIAlertController(title: "Todo 수정", message: "새로운 내용을 입력하세요", preferredStyle: .alert)
 
-    // MARK: - 버튼 눌렀을 때 호출되는 메서드
+        // 2. UIAlertController에 텍스트 필드 추가하고 기존 TodoItem의 텍스트로 초기화
+        alertController.addTextField { textField in
+            textField.text = self.todos[indexPath.row].text
+        }
 
+        // 3. UIAlertAction을 추가하고, 텍스트 필드에서 입력받은 값을 이용하여 Todo를 수정합니다.
+        let editAction = UIAlertAction(title: "수정", style: .default) { [weak self] _ in
+            if let textField = alertController.textFields?.first, let todoText = textField.text {
+                self?.todos[indexPath.row].text = todoText
+                UserDefaults.standard.set(self?.todos.map { $0.dictionary }, forKey: "todos")
+                tableView.reloadData()
+            }
+        }
+
+        // 4. 팝업에 액션 추가 및 보여주기
+        alertController.addAction(editAction)
+        present(alertController, animated: true, completion: nil)
+
+        // 선택한 행의 강조 효과 제거
+        tableView.deselectRow(at: indexPath, animated: true)
+    }
+
+    // MARK: - 스와이프로 수정 및 삭제 가능하도록 설정
+    override func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
+        return true
+    }
+
+    override func tableView(_ tableView: UITableView, editActionsForRowAt indexPath: IndexPath) -> [UITableViewRowAction]? {
+        let editAction = UITableViewRowAction(style: .default, title: "수정") { [weak self] _, indexPath in
+            self?.editTodoItem(at: indexPath)
+        }
+        editAction.backgroundColor = .systemTeal
+
+        let deleteAction = UITableViewRowAction(style: .destructive, title: "삭제") { [weak self] _, indexPath in
+            self?.deleteTodoItem(at: indexPath)
+        }
+
+        return [deleteAction, editAction]
+    }
+
+    // MARK: - 수정 액션 실행 메서드
+    func editTodoItem(at indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        tableView(self.tableView, didSelectRowAt: indexPath)
+    }
+
+    // MARK: - 삭제 액션 실행 메서드
+    func deleteTodoItem(at indexPath: IndexPath) {
+        tableView(self.tableView, commit: .delete, forRowAt: indexPath)
+    }
     @IBAction func addTodoButtonTapped(_ sender: UIBarButtonItem) {
         print("버튼 클릭 : 추가")
         // 1. UIAlertController를 이용해 입력을 받을 수 있는 팝업을 띄웁니다.
