@@ -4,10 +4,11 @@ import UIKit
 struct TodoItem {
     var text: String
     var isCompleted: Bool
+    var category: String // TodoItem에 카테고리 추가
 
     // TodoItem을 Dictionary로 변환하는 속성
     var dictionary: [String: Any] {
-        return ["text": text, "isCompleted": isCompleted]
+        return ["text": text, "isCompleted": isCompleted, "category": category]
     }
 }
 
@@ -20,8 +21,8 @@ class TableViewController: UITableViewController {
     }
 
     // MARK: - Todo 데이터 생성 (Create)
-    func createTodo(text: String) {
-        let newTodo = TodoItem(text: text, isCompleted: false)
+    func createTodo(text: String, category: String) {
+        let newTodo = TodoItem(text: text, isCompleted: false, category: category)
         todos.append(newTodo)
         UserDefaults.standard.set(todos.map { $0.dictionary }, forKey: "todos")
         tableView.reloadData()
@@ -31,33 +32,50 @@ class TableViewController: UITableViewController {
     func loadTodos() {
         if let savedTodos = UserDefaults.standard.array(forKey: "todos") as? [[String: Any]] {
             todos = savedTodos.compactMap { dictionary in
-                guard let text = dictionary["text"] as? String, let isCompleted = dictionary["isCompleted"] as? Bool else {
+                guard let text = dictionary["text"] as? String,
+                      let isCompleted = dictionary["isCompleted"] as? Bool,
+                      let category = dictionary["category"] as? String else {
                     return nil
                 }
-                return TodoItem(text: text, isCompleted: isCompleted)
+                return TodoItem(text: text, isCompleted: isCompleted, category: category)
             }
             tableView.reloadData()
         }
     }
 
     // MARK: - TableView DataSource
+    override func numberOfSections(in tableView: UITableView) -> Int {
+        // 카테고리별로 섹션 나누기
+        let categories = Set(todos.map { $0.category })
+        return categories.count
+    }
+
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return todos.count
+        // 각 섹션별로 해당 카테고리에 속하는 Todo 개수 반환
+        let category = Array(Set(todos.map { $0.category }))[section]
+        return todos.filter { $0.category == category }.count
+    }
+
+    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        // 각 섹션의 카테고리명 반환
+        return Array(Set(todos.map { $0.category }))[section]
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
 
+        // 각 섹션과 행에 해당하는 TodoItem 가져오기
+        let category = Array(Set(todos.map { $0.category }))[indexPath.section]
+        let todosInSection = todos.filter { $0.category == category }
+        let todoItem = todosInSection[indexPath.row]
+
         // TodoItem에서 스위치 상태 및 텍스트를 가져와 설정
-        let todoItem = todos[indexPath.row]
         cell.textLabel?.text = todoItem.text
 
         let switchView = UISwitch()
         switchView.isOn = todoItem.isCompleted
         switchView.addTarget(self, action: #selector(switchChanged(_:)), for: .valueChanged)
-
-        // 태그를 이용해 행 번호 저장
-        switchView.tag = indexPath.row
+        switchView.tag = indexPath.row // 태그를 이용해 행 번호 저장
 
         // AccessoryView로 스위치 추가
         cell.accessoryView = switchView
@@ -68,33 +86,18 @@ class TableViewController: UITableViewController {
         return cell
     }
 
-    // MARK: - TableView Delegate
-    override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
-        if editingStyle == .delete {
-            // 1. 삭제 버튼이 눌린 행의 데이터를 배열에서 제거
-            todos.remove(at: indexPath.row)
-
-            // 2. 변경된 데이터를 UserDefaults에 저장
-            UserDefaults.standard.set(todos.map { $0.dictionary }, forKey: "todos")
-
-            // 3. TableView에서 해당 행을 삭제
-            tableView.deleteRows(at: [indexPath], with: .fade)
-        } else if editingStyle == .insert {
-            // 추가 버튼을 눌렀을 때 필요한 경우
-        }
-    }
-
     // MARK: - 스위치 상태가 변경될 때 호출되는 메서드
     @objc func switchChanged(_ sender: UISwitch) {
-        let row = sender.tag
+        let indexPath = indexPathForSwitch(sender)
+        if let indexPath = indexPath {
+            // TodoItem에서 스위치 상태 변경 및 저장
+            todos[indexPath.row].isCompleted = sender.isOn
+            UserDefaults.standard.set(todos.map { $0.dictionary }, forKey: "todos")
 
-        // TodoItem에서 스위치 상태 변경 및 저장
-        todos[row].isCompleted = sender.isOn
-        UserDefaults.standard.set(todos.map { $0.dictionary }, forKey: "todos")
-
-        // 텍스트의 가운데 줄 상태 업데이트
-        if let cell = tableView.cellForRow(at: IndexPath(row: row, section: 0)) {
-            updateTextStrikeThrough(cell: cell, isCompleted: sender.isOn)
+            // 텍스트의 가운데 줄 상태 업데이트
+            if let cell = tableView.cellForRow(at: indexPath) {
+                updateTextStrikeThrough(cell: cell, isCompleted: sender.isOn)
+            }
         }
     }
 
@@ -109,6 +112,12 @@ class TableViewController: UITableViewController {
             let attributeString = NSAttributedString(string: cell.textLabel?.text ?? "")
             cell.textLabel?.attributedText = attributeString
         }
+    }
+
+    // MARK: - 스위치의 indexPath를 찾아주는 도우미 메서드
+    func indexPathForSwitch(_ sender: UISwitch) -> IndexPath? {
+        let point = sender.convert(CGPoint.zero, to: tableView)
+        return tableView.indexPathForRow(at: point)
     }
 
     // MARK: - 수정 기능 추가
@@ -169,22 +178,30 @@ class TableViewController: UITableViewController {
     @IBAction func addTodoButtonTapped(_ sender: UIBarButtonItem) {
         print("버튼 클릭 : 추가")
         // 1. UIAlertController를 이용해 입력을 받을 수 있는 팝업을 띄웁니다.
-        let alertController = UIAlertController(title: "새로운 Todo", message: "할 일을 입력하세요", preferredStyle: .alert)
+                let alertController = UIAlertController(title: "새로운 Todo", message: "할 일을 입력하세요", preferredStyle: .alert)
 
-        // 2. UIAlertController에 텍스트 필드 추가
-        alertController.addTextField { textField in
-            textField.placeholder = "할 일을 입력하세요"
-        }
+                // 2. UIAlertController에 텍스트 필드 추가
+                alertController.addTextField { textField in
+                    textField.placeholder = "할 일을 입력하세요"
+                }
 
-        // 3. UIAlertAction을 추가하고, 텍스트 필드에서 입력받은 값을 이용하여 Todo를 생성합니다.
-        let addAction = UIAlertAction(title: "추가", style: .default) { [weak self] _ in
-            if let textField = alertController.textFields?.first, let todoText = textField.text {
-                self?.createTodo(text: todoText)
+                // 3. 추가로 텍스트 필드 추가하여 카테고리 입력 받기
+                alertController.addTextField { categoryTextField in
+                    categoryTextField.placeholder = "카테고리를 입력하세요"
+                }
+
+                // 4. UIAlertAction을 추가하고, 텍스트 필드에서 입력받은 값을 이용하여 Todo를 생성합니다.
+                let addAction = UIAlertAction(title: "추가", style: .default) { [weak self] _ in
+                    if let textField = alertController.textFields?.first,
+                       let categoryTextField = alertController.textFields?[1],
+                       let todoText = textField.text,
+                       let category = categoryTextField.text {
+                        self?.createTodo(text: todoText, category: category)
+                    }
+                }
+
+                // 5. 팝업에 액션 추가 및 보여주기
+                alertController.addAction(addAction)
+                present(alertController, animated: true, completion: nil)
             }
         }
-
-        // 4. 팝업에 액션 추가 및 보여주기
-        alertController.addAction(addAction)
-        present(alertController, animated: true, completion: nil)
-    }
-}
